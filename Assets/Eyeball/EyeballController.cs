@@ -77,21 +77,16 @@ public class EyeballController : MonoBehaviour {
         irisSizeMax = range.y;
     }
 
-    public void RandomizeEyeball() {
-
-        // Slightly decrease iris size on random
-        // irisSize = Random.Range(0.9f, 1.0f);
+    public void RandomizeIdentity() {
         irisSize = Random.Range(irisSizeMin, irisSizeMax);
 
         Mesh mesh = GetComponent<MeshFilter>().mesh;
         Vector3[] vertices = mesh.vertices;
 
-        // calculate position of 3D iris middle
         Vector3 iris_middle = Vector3.zero;
         foreach (int idx in iris_idxs)
             iris_middle += vertices[idx] / (float)iris_idxs.Length;
 
-        // re-position limbus vertices
         for (int i = 0; i < iris_idxs.Length; i++) {
             Vector3 offset = iris_start_pos[i] - iris_middle;
             vertices[iris_idxs[i]] = iris_middle + offset * irisSize;
@@ -99,24 +94,29 @@ public class EyeballController : MonoBehaviour {
 
         mesh.vertices = vertices;
 
-        // TODO: Randomize pupil size based on clamped uniform distribution instead of gaussian noise
-        // float pupilSize = Random.Range(pupilSizeMin, pupilSizeMax);
-        // eyeMaterial.SetFloat("_PupilSize", pupilSize);
-        //eyeMaterial.SetFloat("_PupilSize", SyntheseyesUtils.NextGaussianDouble()/5.0f);
+        if (Random.value > 0.5f) eyeMaterial.SetTexture("_MainTex", colorTexsDict["eyeball_brown"]);
+        else eyeMaterial.SetTexture("_MainTex", colorTexs[Random.Range(0, colorTexs.Count)]);
+    }
 
-        // Sample uniformly in mm so all sizes are equally probable.
-        // Sampling in _PupilSize space would massively oversample small pupils
-        // because the mm→ps mapping is highly nonlinear near the lower bound.
-        float pupilMm = Random.Range(pupilMmMin, pupilMmMax);
+    public void SetPupilDiameterMm(float pupilMm) {
+        pupilMm = Mathf.Clamp(pupilMm, EyeSizeCalibration.PUPIL_MM_MIN, EyeSizeCalibration.PUPIL_MM_MAX);
         float pupilSize = EyeSizeCalibration.PupilDiameterMmToPupilSize(pupilMm);
         eyeMaterial.SetFloat("_PupilSize", pupilSize);
+
         // UV_PER_MM = IRIS_RING_UV_RADIUS / (IRIS_RING_RADIUS_M * LOSSY_SCALE * 10)
         //           = 0.1385 / (0.005870 * 100 * 10) = 0.023596
         float pupilRadiusUV = Mathf.Clamp(pupilMm * 0.5f * 0.023596f, 0.005f, 0.1335f);
         eyeMaterial.SetFloat("_PupilRadiusUV", pupilRadiusUV);
+    }
 
-        if (Random.value > 0.5f) eyeMaterial.SetTexture("_MainTex", colorTexsDict["eyeball_brown"]);
-        else eyeMaterial.SetTexture("_MainTex", colorTexs[Random.Range(0, colorTexs.Count)]);
+    public void RandomizePupilDiameter() {
+        SetPupilDiameterMm(Random.Range(pupilMmMin, pupilMmMax));
+    }
+
+    // Backward-compatible one-shot randomization used by the interactive UI.
+    public void RandomizeEyeball() {
+        RandomizeIdentity();
+        RandomizePupilDiameter();
     }
 
     public Vector3 GetPupilCenter() {

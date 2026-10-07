@@ -79,12 +79,14 @@ public class SynthesEyesServer : MonoBehaviour{
     // Camera management fields
     private List<Camera> cameraList = new List<Camera>();
     private int currentCameraIndex = 0;
-    public string jsonConfigPath = "camera_config.json";
+    public string jsonConfigPath = "gradpupil/gradpupil_autoload.json";
+    private string activeConfigPath;
 
     private string outputPath;
     public string outputFolderName = "imgs";
 
     private int maxSamplesToSave = 10000;
+    private GroupedRandomizationController datasetRandomizer;
 
     // Motion Center Feature
     private bool useMotionCenter = true;
@@ -114,6 +116,9 @@ public class SynthesEyesServer : MonoBehaviour{
     private EyeParameters eyeParameters;
 
     public bool isSavingData = false;
+    public bool autoStartOnConfig = true;
+    public bool nirLightingMode = true;
+    private bool isSavingFrame = false;
 
 	private Mesh eyemesh;
 
@@ -149,36 +154,140 @@ public class SynthesEyesServer : MonoBehaviour{
             visualizationManager.synthesEyesServer = this;
         }
 
-        // Load cameras from JSON, or fall back to a default scene so 'c' and 'r'
-        // work immediately without requiring a config file.
-        if (File.Exists(jsonConfigPath))
+        // Load cameras from JSON after one frame so UI and EyeballController
+        // initialization have finished. Resolve relative paths from the Unity
+        // project root, not the process working directory.
+        string resolvedConfigPath = ResolveProjectPath(jsonConfigPath);
+        if (!File.Exists(resolvedConfigPath))
         {
-            LoadCamerasFromConfig(jsonConfigPath);
+            string fallbackConfigPath = ResolveProjectPath("gradpupil/gradpupil_autoload.json");
+            Debug.LogWarning($"Config not found: {jsonConfigPath} resolved to {resolvedConfigPath}; trying {fallbackConfigPath}");
+            resolvedConfigPath = fallbackConfigPath;
+        }
 
-            if (eyeParameters != null)
-            {
-                Debug.Log($"[Eye Parameters Loaded]");
-                Debug.Log($"  Pupil Size Range: min={eyeParameters.pupilSizeRange.x}, max={eyeParameters.pupilSizeRange.y}");
-                Debug.Log($"  Iris Size Range: min={eyeParameters.irisSizeRange.x}, max={eyeParameters.irisSizeRange.y}");
-                Debug.Log($"  Default Yaw: {eyeParameters.defaultYaw}");
-                Debug.Log($"  Default Pitch: {eyeParameters.defaultPitch}");
-                Debug.Log($"  Yaw Noise: {eyeParameters.yawNoise}");
-                Debug.Log($"  Pitch Noise: {eyeParameters.pitchNoise}");
-
-                eyeball.SetPupilSizeRange(eyeParameters.pupilSizeRange);
-                eyeball.SetIrisSizeRange(eyeParameters.irisSizeRange);
-            }
-
-            MenuController menuController = FindFirstObjectByType<MenuController>();
-            if (menuController != null)
-            {
-                JSONNode rootNode = JSON.Parse(File.ReadAllText(jsonConfigPath));
-                menuController.PopulateUIFromConfig(rootNode);
-            }
+        if (File.Exists(resolvedConfigPath))
+        {
+            StartCoroutine(InitializeConfiguredScene(resolvedConfigPath));
         }
         else
         {
+            Debug.LogWarning($"Config not found: {resolvedConfigPath}");
             StartCoroutine(InitializeDefaultScene());
+        }
+    }
+
+    private string ResolveProjectPath(string path)
+    {
+        if (Path.IsPathRooted(path)) return path;
+        string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+        return Path.Combine(projectRoot, path);
+    }
+
+    private IEnumerator InitializeConfiguredScene(string configPath)
+    {
+        yield return null;
+
+        activeConfigPath = configPath;
+        LoadCamerasFromConfig(configPath);
+
+        if (eyeParameters != null)
+        {
+            Debug.Log($"[Eye Parameters Loaded]");
+            Debug.Log($"  Pupil Size Range: min={eyeParameters.pupilSizeRange.x}, max={eyeParameters.pupilSizeRange.y}");
+            Debug.Log($"  Iris Size Range: min={eyeParameters.irisSizeRange.x}, max={eyeParameters.irisSizeRange.y}");
+            Debug.Log($"  Default Yaw: {eyeParameters.defaultYaw}");
+            Debug.Log($"  Default Pitch: {eyeParameters.defaultPitch}");
+            Debug.Log($"  Yaw Noise: {eyeParameters.yawNoise}");
+            Debug.Log($"  Pitch Noise: {eyeParameters.pitchNoise}");
+
+            eyeball.SetPupilSizeRange(eyeParameters.pupilSizeRange);
+            eyeball.SetIrisSizeRange(eyeParameters.irisSizeRange);
+        }
+
+        MenuController menuController = FindFirstObjectByType<MenuController>();
+        if (menuController != null)
+        {
+            JSONNode rootNode = JSON.Parse(File.ReadAllText(configPath));
+            menuController.PopulateUIFromConfig(rootNode);
+        }
+
+        ConfigureDatasetRandomizer(configPath);
+        RandomizePose();
+        if (nirLightingMode)
+        {
+            ApplyNirLightingMode();
+        }
+        Debug.Log($"Configured scene initialized from {configPath}");
+
+        if (autoStartOnConfig)
+        {
+            ResetFrameCounter();
+            isSavingData = true;
+            Canvas guiCanvas = GameObject.Find("GUI Canvas")?.GetComponent<Canvas>();
+            if (guiCanvas != null) guiCanvas.enabled = false;
+            Debug.Log("Auto-starting dataset generation from configured scene.");
+        }
+    }
+
+    private void ConfigureDatasetRandomizer(string configPath)
+    {
+        JSONNode root = JSON.Parse(File.ReadAllText(configPath));
+        JSONNode dataset = root["dataset"];
+        if (dataset == null)
+        {
+            datasetRandomizer = null;
+            eyeRegion.randomizeAppearance = true;
+            return;
+        }
+
+        int posesPerIdentity = dataset["poses_per_identity"] != null
+            ? dataset["poses_per_identity"].AsInt
+            : 1;
+        int seed = dataset["seed"] != null ? dataset["seed"].AsInt : 1729;
+
+        List<float> pupilSizes = new List<float>();
+        JSONArray pupilArray = dataset["pupil_diameters_mm"].AsArray;
+        if (pupilArray != null)
+        {
+            for (int i = 0; i < pupilArray.Count; i++)
+                pupilSizes.Add(pupilArray[i].AsFloat);
+        }
+        if (pupilSizes.Count == 0) pupilSizes.Add(4.0f);
+
+        datasetRandomizer = GetComponent<GroupedRandomizationController>();
+        if (datasetRandomizer == null)
+            datasetRandomizer = gameObject.AddComponent<GroupedRandomizationController>();
+
+        datasetRandomizer.Configure(
+            this,
+            eyeRegion,
+            eyeball,
+            posesPerIdentity,
+            pupilSizes.ToArray(),
+            seed);
+
+        Debug.Log($"Grouped dataset: {posesPerIdentity} poses x {pupilSizes.Count} pupil sizes per identity.");
+    }
+
+    private void ApplyNirLightingMode()
+    {
+        Light directional = GameObject.Find("directional_light")?.GetComponent<Light>();
+        if (directional != null)
+        {
+            directional.intensity = 0f;
+            directional.color = Color.white;
+        }
+
+        RenderSettings.ambientIntensity = 0.02f;
+        if (RenderSettings.skybox != null)
+        {
+            RenderSettings.skybox.SetFloat("_Exposure", 0.0f);
+        }
+
+        ReflectionProbe probe = GameObject.Find("reflection_probe")?.GetComponent<ReflectionProbe>();
+        if (probe != null)
+        {
+            probe.intensity = 0f;
         }
     }
 
@@ -238,7 +347,7 @@ public class SynthesEyesServer : MonoBehaviour{
         // Initial randomize — iris_start_pos is now safely populated.
         eyeball.RandomizeEyeball();
         eyeRegion.RandomizeAppearance();
-        RandomizeScene();
+        RandomizePose();
     }
 
 
@@ -267,6 +376,13 @@ public class SynthesEyesServer : MonoBehaviour{
             {
                 Debug.LogError("Failed to parse JSON config file");
                 return;
+            }
+
+            if (rootNode["outputPath"] != null)
+            {
+                outputPath = rootNode["outputPath"].Value;
+                EnsureDirectoryExists(outputPath);
+                Debug.Log($"Output path loaded from config: {outputPath}");
             }
 
             if (rootNode["num_samples"] != null)
@@ -617,11 +733,66 @@ public class SynthesEyesServer : MonoBehaviour{
                     cameraOriginalRotations[i] = new Vector3(origRot.x, origRot.y + 180f, origRot.z);
                 }
             }
+
+            ApplyGradPupilHardcodedRig();
         }
         catch (System.Exception e)
         {
             Debug.LogError($"Error loading camera config: {e.Message}\n{e.StackTrace}");
         }
+    }
+
+    private void ApplyGradPupilHardcodedRig()
+    {
+        if (cameraList == null || cameraList.Count == 0 || pointLightList == null || pointLightList.Count == 0)
+            return;
+
+        Camera cam = cameraList[0];
+
+        // GradPupil prototype IR glint rig: 4 inner + 4 outer emitters, rigidly
+        // mounted to the camera. Units here are Unity world centimeters because
+        // UnityEyes2 converts JSON meters to cm internally.
+        float innerR = 1.35f; // 13.5 mm
+        float outerR = 2.70f; // 27.0 mm
+        Vector3[] localOffsets = new Vector3[]
+        {
+            new Vector3( innerR, 0f, 0f),
+            new Vector3( 0f, innerR, 0f),
+            new Vector3(-innerR, 0f, 0f),
+            new Vector3( 0f,-innerR, 0f),
+            new Vector3( outerR * 0.70710678f,  outerR * 0.70710678f, 0f),
+            new Vector3(-outerR * 0.70710678f,  outerR * 0.70710678f, 0f),
+            new Vector3(-outerR * 0.70710678f, -outerR * 0.70710678f, 0f),
+            new Vector3( outerR * 0.70710678f, -outerR * 0.70710678f, 0f),
+        };
+
+        int n = Mathf.Min(pointLightList.Count, localOffsets.Length);
+
+        // The active "Fantastic" quality level defaults to four pixel lights.
+        // Extra point lights then fall back to vertex lighting and cannot form
+        // distinct corneal specular highlights. Reserve one pixel light per LED.
+        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, n);
+
+        for (int i = 0; i < n; i++)
+        {
+            Light light = pointLightList[i];
+            if (light == null) continue;
+            light.transform.SetParent(cam.transform, false);
+            light.transform.localPosition = localOffsets[i];
+            light.transform.localRotation = Quaternion.identity;
+            // Treat these as rigid camera-mounted lights. Otherwise the
+            // non-motion-center randomization path rewrites every non-array
+            // light back to its JSON world position each frame, collapsing the
+            // 4+4 rig into one glint.
+            pointLightArrayMounted[i] = true;
+            light.range = 25f;
+            light.intensity = 0.8f;
+            light.color = Color.white;
+            light.shadows = LightShadows.None;
+            light.renderMode = LightRenderMode.ForcePixel;
+        }
+
+        Debug.Log($"Applied GradPupil hardcoded 4+4 IR rig to {n} point lights.");
     }
 
     private void LoadPointLightsFromConfig(JSONNode rootNode)
@@ -762,7 +933,7 @@ public class SynthesEyesServer : MonoBehaviour{
     private void ConfigureCameraFromIntrinsics(Camera cam, CameraConfig config)
     {
         cam.orthographic = config.is_orthographic;
-        cam.nearClipPlane = 0.1f; 
+        cam.nearClipPlane = 0.005f;
         cam.farClipPlane = 1000f;
 
         if (config.is_orthographic)
@@ -836,7 +1007,7 @@ public class SynthesEyesServer : MonoBehaviour{
         return Mathf.Clamp(offset, -range, range);
     }
 
-    void RandomizeScene()
+    public void RandomizePose()
     {
         if (eyeball == null)
         {
@@ -921,7 +1092,7 @@ public class SynthesEyesServer : MonoBehaviour{
                 Vector3 lightOriginalPosition = pointLightOriginalPositions[i];
                 Vector3 lightOriginalRotation = pointLightOriginalRotations[i];
 
-                JSONNode lightsArray = JSON.Parse(File.ReadAllText(jsonConfigPath))["lights"].AsArray;
+                JSONNode lightsArray = JSON.Parse(File.ReadAllText(string.IsNullOrEmpty(activeConfigPath) ? ResolveProjectPath(jsonConfigPath) : activeConfigPath))["lights"].AsArray;
                 if (i >= lightsArray.Count) continue;
 
                 JSONNode lightNode = lightsArray[i];
@@ -971,14 +1142,14 @@ public class SynthesEyesServer : MonoBehaviour{
             string combinedPath = Path.Combine(newPath, outputFolderName);
             Debug.Log($"Setting output path to: {combinedPath}");
             outputPath = combinedPath;
-            // EnsureDirectoryExists(combinedPath);
+            EnsureDirectoryExists(combinedPath);
         }
         else
         {
             Debug.LogWarning("No output path provided; using persistentDataPath fallback.");
             string fallbackPath = Path.Combine(Application.persistentDataPath, "imgs");
             outputPath = fallbackPath;
-            // EnsureDirectoryExists(fallbackPath);
+            EnsureDirectoryExists(fallbackPath);
         }
     }
 
@@ -1001,10 +1172,14 @@ public class SynthesEyesServer : MonoBehaviour{
             SwitchCamera(-1);
         }
 
-        if (isSavingData || Input.GetKey("c"))
+        if (isSavingData && datasetRandomizer != null)
+        {
+            datasetRandomizer.PrepareCurrentSample();
+        }
+        else if (isSavingData || Input.GetKey("c"))
         {
             ToggleOutputPreview();
-            RandomizeScene();
+            RandomizePose();
             ToggleOutputPreview();
         }
 
@@ -1013,7 +1188,7 @@ public class SynthesEyesServer : MonoBehaviour{
             ToggleOutputPreview();
         }
 
-        if (isSavingData || Input.GetKey("r"))
+        if (datasetRandomizer == null && (isSavingData || Input.GetKey("r")))
         {
             ToggleOutputPreview();
             eyeRegion.RandomizeAppearance();
@@ -1021,19 +1196,27 @@ public class SynthesEyesServer : MonoBehaviour{
             ToggleOutputPreview();
         }
 
-        if (isSavingData || Input.GetKey("l"))
+        if (Input.GetKey("l"))
         {
             lightingController.RandomizeLighting();
+            if (nirLightingMode)
+            {
+                ApplyNirLightingMode();
+            }
         }
 
         eyeRegion.UpdateEyeRegion();
         eyeRegionSubdiv.Subdivide();
         eyeWetness.UpdateEyeWetness();
         eyeWetnessSubdiv.Subdivide();
+        if (datasetRandomizer == null && (isSavingData || Input.GetKey("r")))
+        {
+            RandomizeIdentityLashes();
+        }
         foreach (DeformEyeLashes eyeLash in eyeLashes)
             eyeLash.UpdateLashes();
 
-        if (isSavingData || Input.GetKey("s"))
+        if ((isSavingData || Input.GetKey("s")) && !isSavingFrame)
         {
             StartCoroutine(saveFrame());
         }
@@ -1075,6 +1258,31 @@ public class SynthesEyesServer : MonoBehaviour{
         visualizationManager.ToggleVisualization();
     }
 
+    public void RandomizeIdentityLashes()
+    {
+        if (eyeLashes == null) return;
+
+        foreach (DeformEyeLashes eyeLash in eyeLashes)
+        {
+            if (eyeLash == null) continue;
+
+            if (eyeLash.isTopLash)
+            {
+                eyeLash.hairLengthModifier = Random.Range(0.55f, 1.35f);
+                eyeLash.margin_offset = Random.Range(0.35f, 0.70f);
+                eyeLash.topLashStartAngle = Random.Range(25f, 48f);
+                eyeLash.topLashDeltaAngle = Random.Range(-28f, -10f);
+            }
+            else
+            {
+                eyeLash.hairLengthModifier = Random.Range(0.35f, 1.10f);
+                eyeLash.margin_offset = Random.Range(0.30f, 0.70f);
+                eyeLash.bottomLashStartAngle = Random.Range(30f, 58f);
+                eyeLash.bottomLashDeltaAngle = Random.Range(-28f, -8f);
+            }
+        }
+    }
+
 
     private Color parseColor(JSONNode jN)
     {
@@ -1097,11 +1305,13 @@ public class SynthesEyesServer : MonoBehaviour{
 
     private IEnumerator saveFrame()
     {
+        isSavingFrame = true;
         if (framesSaved >= maxSamplesToSave)
         {
             Debug.Log($"Maximum number of samples ({maxSamplesToSave}) reached. Stopping data collection.");
             isSavingData = false;
             GameObject.Find("GUI Canvas").GetComponent<Canvas>().enabled = true;
+            isSavingFrame = false;
             yield break;
         }
 
@@ -1111,8 +1321,8 @@ public class SynthesEyesServer : MonoBehaviour{
         if (string.IsNullOrEmpty(outputPath))
         {
             outputPath = Path.Combine(Application.persistentDataPath, "imgs");
-            // EnsureDirectoryExists(outputPath);
         }
+        EnsureDirectoryExists(outputPath);
 
         for (int i = 0; i < cameraList.Count; i++)
         {
@@ -1125,26 +1335,30 @@ public class SynthesEyesServer : MonoBehaviour{
 
             int width = cameraOriginalIntrinsics[i].width;
             int height = cameraOriginalIntrinsics[i].height;
+            // Keep a linear half-float master so later optics/sensor processing
+            // can set exposure, clipping and RAW8 quantization without JPEG or
+            // 8-bit readback artefacts.
             RenderTexture renderTexture = RenderTexture.GetTemporary(
                 width,
                 height,
                 24,
-                RenderTextureFormat.ARGB32);
+                RenderTextureFormat.ARGBHalf,
+                RenderTextureReadWrite.Linear);
 
             RenderTexture originalRenderTexture = cam.targetTexture;
             cam.targetTexture = renderTexture;
             cam.Render();
 
-            Texture2D tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+            Texture2D tex = new Texture2D(width, height, TextureFormat.RGBAHalf, false, true);
             RenderTexture.active = renderTexture;
-            tex.ReadPixels(new Rect(0, 0, cam.pixelWidth, cam.pixelHeight), 0, 0);
+            tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
             tex.Apply();
 
             cam.targetTexture = originalRenderTexture;
             RenderTexture.active = null;
 
-            byte[] imgBytes = tex.EncodeToJPG();
-            string fileName = Path.Combine(outputPath, $"{framesSaved}_{cameraName}.jpg");
+            byte[] imgBytes = tex.EncodeToEXR(Texture2D.EXRFlags.CompressZIP);
+            string fileName = Path.Combine(outputPath, $"{framesSaved}_{cameraName}.exr");
             File.WriteAllBytes(fileName, imgBytes);
 
             RenderTexture.ReleaseTemporary(renderTexture);
@@ -1152,19 +1366,25 @@ public class SynthesEyesServer : MonoBehaviour{
         }
 
         saveAllCamerasDetails(framesSaved);
+        if (datasetRandomizer != null)
+        {
+            datasetRandomizer.AdvanceAfterSave();
+        }
 
         SwitchCamera(originalCameraIndex - currentCameraIndex);
+        isSavingFrame = false;
     }
 
     public void ResetFrameCounter()
     {
         framesSaved = 0;
+        if (datasetRandomizer != null) datasetRandomizer.ResetSequence();
         Debug.Log("Frame counter reset. Ready to collect new samples.");
     }
 
     public void ReloadConfiguration(string configPath = null)
     {
-        string path = configPath != null ? configPath : jsonConfigPath;
+        string path = configPath != null ? configPath : (string.IsNullOrEmpty(activeConfigPath) ? ResolveProjectPath(jsonConfigPath) : activeConfigPath);
         Debug.Log($"Reloading configuration from: {path}");
 
         CleanupCurrentScene();
@@ -1189,7 +1409,8 @@ public class SynthesEyesServer : MonoBehaviour{
                 menuController.PopulateUIFromConfig(rootNode);
             }
 
-            RandomizeScene();
+            ConfigureDatasetRandomizer(path);
+            RandomizePose();
 
             ToggleOutputPreview();
             ToggleOutputPreview();
@@ -1273,6 +1494,10 @@ public class SynthesEyesServer : MonoBehaviour{
         rootNode.Add("eye_details", eyeball.GetEyeballDetails());
         rootNode.Add("lighting_details", lightingController.GetLightingDetails());
         rootNode.Add("eye_region_details", eyeRegion.GetEyeRegionDetails());
+        if (datasetRandomizer != null)
+        {
+            rootNode.Add("dataset_state", datasetRandomizer.GetMetadata());
+        }
 
         JSONNode camerasNode = new JSONClass();
         rootNode.Add("cameras", camerasNode);

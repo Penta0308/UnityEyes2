@@ -88,13 +88,9 @@
 			o.Albedo = c.rgb;
 			o.Alpha = c.a;
 			
-			float3 caruncleColor = float3(172.0/255.0, 89.0/255.0, 89.0/255.0);
-			float3 caruncleC = lerp(tex2D (_Tex2dColor, float2(0, 0)), caruncleColor, 0.4);
-
-			// o.Albedo = lerp(o.Albedo, caruncleC, tex2D(_CaruncleBlend, uv).r);
-			o.Albedo = lerp(o.Albedo, caruncleC, tex2D (_MarginMask, uv).r);
-
-//			o.Albedo.rgb = caruncleColor;
+			// Caruncle and lid-margin colour are supplied by the subject texture.
+			// _MarginMask remains a material-property mask below; it must not
+			// overwrite albedo with a fixed visible-light RGB value.
 			
 			float is_margin = tex2D(_MarginMask, uv);
 			o.Normal = UnpackNormal(tex2D(_BumpTex, uv));
@@ -184,11 +180,13 @@
 			// Half-Lambert lighting value based on blurred normals.
 			brdfUV.x = dotNLBlur * 0.5 + 0.5;
 			brdfUV.y = s.Curvature * dot(gi.light.color, fixed3(0.22, 0.707, 0.071));
-			half3 brdf = tex2D( _BRDFTex, brdfUV ).rgb;
+			half3 brdfRgb = tex2D( _BRDFTex, brdfUV ).rgb;
+			half brdf = dot(brdfRgb, half3(0.2126, 0.7152, 0.0722));
 
-			//	Final composition
+			//	Final composition. The BRDF lookup supplies intensity only; spectral
+			// colour remains exclusively in the albedo and incident light.
 			half4 c = 0;
-			c.rgb = s.Albedo * gi.light.color * lerp(dotNL.xxx, brdf, s.SSS) // diffuse
+			c.rgb = s.Albedo * gi.light.color * lerp(dotNL.xxx, brdf.xxx, s.SSS) // diffuse
 					+ D * G * F * gi.light.color * dotNL; 					 // direct specular
 					+ gi.indirect.specular * F_L;						     // indirect specular
 

@@ -123,16 +123,15 @@ Shader "EyeShader" {
 
             float4 eyeColor = tex2D(_MainTex, uv_iris);
             
-            // Determine if we're on the iris/pupil vs. the sclera (white part)
-            // by checking color luminance - darker areas are iris/pupil
-            float luminance = dot(eyeColor.rgb, float3(0.299, 0.587, 0.114));
-            float isIris = 1.0 - smoothstep(0.2, 0.7, luminance);
-            
-            // Vary reflectivity based on whether we're on iris or sclera
+            // Tissue classification comes from the established UV anatomy, not
+            // texture brightness. The existing atlas transitions from iris at
+            // R_IRIS_UV to stable sclera near UV radius 0.15.
+            float isIris = 1.0 - smoothstep(R_IRIS_UV, 0.15, r_sample);
+
+            // Reflection controls must not alter diffuse albedo. This keeps the
+            // texture slot meaningful for both RGB and monochrome albedo maps.
             float baseReflectionIntensity = lerp(0.4, _ReflectionIntensity, isIris);
-            
-            // Use a more subtle albedo reduction to preserve color
-            o.Albedo = eyeColor.rgb * (1.0 - baseReflectionIntensity * 0.2);
+            o.Albedo = eyeColor.rgb;
             
             // Get glossiness from texture
             float texGloss = saturate(tex2D(_GlossTex, uv).r);
