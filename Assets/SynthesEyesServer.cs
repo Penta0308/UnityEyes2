@@ -232,6 +232,11 @@ public class SynthesEyesServer : MonoBehaviour{
     private void ConfigureDatasetRandomizer(string configPath)
     {
         JSONNode root = JSON.Parse(File.ReadAllText(configPath));
+        string albedoResourceRoot = root["albedo_resource_root"] != null
+            ? root["albedo_resource_root"].Value
+            : "";
+        eyeRegion.LoadAlbedoTextureSet(albedoResourceRoot);
+        eyeball.LoadAlbedoTextureSet(albedoResourceRoot);
         JSONNode dataset = root["dataset"];
         if (dataset == null)
         {
@@ -768,31 +773,54 @@ public class SynthesEyesServer : MonoBehaviour{
 
         int n = Mathf.Min(pointLightList.Count, localOffsets.Length);
 
-        // The active "Fantastic" quality level defaults to four pixel lights.
-        // Extra point lights then fall back to vertex lighting and cannot form
-        // distinct corneal specular highlights. Reserve one pixel light per LED.
-        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, n);
+        // Approximate each 0805 emitter (2.0 x 1.25 mm package) by four equal
+        // point samples over its camera-plane area. At 80 mm and Rc=7.8 mm,
+        // the corneal virtual image is about 0.093 x 0.058 mm, or 2.7 x 1.7
+        // pixels in the 2560 x 1600 master. A single mathematical point source
+        // can become subpixel and disappear at high smoothness.
+        Vector2[] emitterSamplesCm = new Vector2[]
+        {
+            new Vector2(-0.10f, -0.0625f),
+            new Vector2( 0.10f, -0.0625f),
+            new Vector2(-0.10f,  0.0625f),
+            new Vector2( 0.10f,  0.0625f),
+        };
+
+        // Remove proxies from a previous configuration reload.
+        List<GameObject> oldProxies = new List<GameObject>();
+        foreach (Transform child in cam.transform)
+            if (child.name.StartsWith("GradPupil0805_")) oldProxies.Add(child.gameObject);
+        foreach (GameObject oldProxy in oldProxies) Destroy(oldProxy);
+
+        int proxyCount = n * emitterSamplesCm.Length;
+        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, proxyCount);
 
         for (int i = 0; i < n; i++)
         {
-            Light light = pointLightList[i];
-            if (light == null) continue;
-            light.transform.SetParent(cam.transform, false);
-            light.transform.localPosition = localOffsets[i];
-            light.transform.localRotation = Quaternion.identity;
-            // Treat these as rigid camera-mounted lights. Otherwise the
-            // non-motion-center randomization path rewrites every non-array
-            // light back to its JSON world position each frame, collapsing the
-            // 4+4 rig into one glint.
+            Light source = pointLightList[i];
+            if (source == null) continue;
+            source.enabled = false;
             pointLightArrayMounted[i] = true;
-            light.range = 25f;
-            light.intensity = 0.8f;
-            light.color = Color.white;
-            light.shadows = LightShadows.None;
-            light.renderMode = LightRenderMode.ForcePixel;
+
+            for (int sampleIndex = 0; sampleIndex < emitterSamplesCm.Length; sampleIndex++)
+            {
+                Vector2 sample = emitterSamplesCm[sampleIndex];
+                GameObject proxyObject = new GameObject($"GradPupil0805_{i:00}_{sampleIndex:00}");
+                proxyObject.transform.SetParent(cam.transform, false);
+                proxyObject.transform.localPosition = localOffsets[i] + new Vector3(sample.x, sample.y, 0f);
+                proxyObject.transform.localRotation = Quaternion.identity;
+
+                Light proxy = proxyObject.AddComponent<Light>();
+                proxy.type = LightType.Point;
+                proxy.range = 25f;
+                proxy.intensity = 0.8f / emitterSamplesCm.Length;
+                proxy.color = Color.white;
+                proxy.shadows = LightShadows.None;
+                proxy.renderMode = LightRenderMode.ForcePixel;
+            }
         }
 
-        Debug.Log($"Applied GradPupil hardcoded 4+4 IR rig to {n} point lights.");
+        Debug.Log($"Applied GradPupil 4+4 IR rig as {proxyCount} point samples for {n} 0805 emitters.");
     }
 
     private void LoadPointLightsFromConfig(JSONNode rootNode)

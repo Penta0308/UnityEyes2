@@ -8,6 +8,7 @@ public class EyeballController : MonoBehaviour {
     List<Texture2D> colorTexs = new List<Texture2D>();		// Eye region color textures
     Dictionary<string, Texture2D> colorTexsDict = new Dictionary<string, Texture2D>();
     Material eyeMaterial;
+    private string activeAlbedoResourceRoot = "";
 
     public static int[] iris_idxs = { 3, 7, 11, 14, 18, 21, 25, 29, 33, 37, 41, 45, 49, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 124 };
     public static Vector3[] iris_start_pos = new Vector3[iris_idxs.Length];
@@ -24,20 +25,34 @@ public class EyeballController : MonoBehaviour {
 	// Use this for initialization
 	void Start () {
 
-        // initialize collection of color textures
-        foreach (Texture2D c in Resources.LoadAll("IrisTextures", typeof(Texture2D))) {
-            colorTexs.Add(c);
-            colorTexsDict.Add(c.name, c);
-        }
-            
-
-        // initialize material for later modifications
+        // initialize material and the default visible texture collection
         eyeMaterial = Resources.Load("Materials/EyeMaterial", typeof(Material)) as Material;
+        LoadAlbedoTextureSet("");
 
         Mesh mesh = GetComponent<MeshFilter>().mesh;
         Vector3[] vertices = mesh.vertices;
         for (int i=0; i<iris_idxs.Length; i++)
             iris_start_pos[i] = vertices[iris_idxs[i]];
+    }
+
+    public void LoadAlbedoTextureSet(string resourceRoot) {
+        activeAlbedoResourceRoot = string.IsNullOrEmpty(resourceRoot)
+            ? ""
+            : resourceRoot.Trim('/');
+        string irisPath = string.IsNullOrEmpty(activeAlbedoResourceRoot)
+            ? "IrisTextures"
+            : activeAlbedoResourceRoot + "/IrisTextures";
+
+        colorTexs.Clear();
+        colorTexsDict.Clear();
+        foreach (Texture2D texture in Resources.LoadAll(irisPath, typeof(Texture2D))) {
+            colorTexs.Add(texture);
+            colorTexsDict[texture.name] = texture;
+        }
+        colorTexs.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+        if (colorTexs.Count == 0 || !colorTexsDict.ContainsKey("eyeball_brown"))
+            throw new System.InvalidOperationException("Incomplete iris texture set under Resources/" + irisPath);
+        Debug.Log("Loaded iris albedo texture set: " + (string.IsNullOrEmpty(activeAlbedoResourceRoot) ? "visible/default" : activeAlbedoResourceRoot));
     }
 
 	// Update is called once per frame
@@ -147,6 +162,7 @@ public class EyeballController : MonoBehaviour {
         eyeballNode.Add("pupil_size", eyeMaterial.GetFloat("_PupilSize").ToString());
         eyeballNode.Add("iris_size", irisSize.ToString());
         eyeballNode.Add("iris_texture", eyeMaterial.GetTexture("_MainTex").name);
+        eyeballNode.Add("albedo_resource_root", string.IsNullOrEmpty(activeAlbedoResourceRoot) ? "visible/default" : activeAlbedoResourceRoot);
 
         return eyeballNode;
     }

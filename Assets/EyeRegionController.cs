@@ -23,6 +23,7 @@ public class EyeRegionController : MonoBehaviour {
 	List<Texture2D> colorTexs = new List<Texture2D>();		// Eye region color textures
 	List<Texture2D> colorLdTexs = new List<Texture2D>(); 	// Look-down version of eye-region texs
 	List<Texture2D> bumpTexs = new List<Texture2D>(); 		// Bumpmap eye-region texs
+	private string activeAlbedoResourceRoot = "";
 	
 	void Start () {
 
@@ -37,20 +38,39 @@ public class EyeRegionController : MonoBehaviour {
 		// initialize material for later modifications
 		faceMaterial = Resources.Load("Materials/FaceMaterial", typeof(Material)) as Material;
 
+		LoadAlbedoTextureSet("");
+	}
+
+	public void LoadAlbedoTextureSet(string resourceRoot) {
+		activeAlbedoResourceRoot = string.IsNullOrEmpty(resourceRoot)
+			? ""
+			: resourceRoot.Trim('/');
+		string albedoPath = string.IsNullOrEmpty(activeAlbedoResourceRoot)
+			? "SkinTextures"
+			: activeAlbedoResourceRoot + "/SkinTextures";
+
+		colorTexs.Clear();
+		colorLdTexs.Clear();
+		bumpTexs.Clear();
+
 		List<string> texIds = new List<string> ();
-		for (int i=1; i<=5; i++) {
-			texIds.Add(string.Format("f{0:00}", i));  
-		}
-		for (int i=1; i<=15; i++) {
-			texIds.Add(string.Format("m{0:00}", i));  
-		}
+		for (int i=1; i<=5; i++) texIds.Add(string.Format("f{0:00}", i));
+		for (int i=1; i<=15; i++) texIds.Add(string.Format("m{0:00}", i));
 
 		foreach (string texId in texIds) {
-			string fn = string.Format ("SkinTextures/{0}_color", texId);
-			colorTexs.Add(Resources.Load (fn) as Texture2D);
-			colorLdTexs.Add(Resources.Load (fn.Replace("color","color_look_down")) as Texture2D);
-			bumpTexs.Add(Resources.Load (fn.Replace("color","disp")) as Texture2D);
+			string albedoFn = string.Format("{0}/{1}_color", albedoPath, texId);
+			Texture2D color = Resources.Load(albedoFn) as Texture2D;
+			Texture2D colorLd = Resources.Load(albedoFn.Replace("color", "color_look_down")) as Texture2D;
+			// Geometry detail remains wavelength-independent and continues to use
+			// the original displacement texture.
+			Texture2D bump = Resources.Load(string.Format("SkinTextures/{0}_disp", texId)) as Texture2D;
+			if (color == null || colorLd == null || bump == null)
+				throw new InvalidOperationException("Incomplete skin texture set for " + texId + " under " + albedoPath);
+			colorTexs.Add(color);
+			colorLdTexs.Add(colorLd);
+			bumpTexs.Add(bump);
 		}
+		Debug.Log("Loaded skin albedo texture set: " + (string.IsNullOrEmpty(activeAlbedoResourceRoot) ? "visible/default" : activeAlbedoResourceRoot));
 	}
 
 	public void RandomizeAppearance(){
@@ -258,6 +278,7 @@ public class EyeRegionController : MonoBehaviour {
 
         eyeRegionNode.Add("pca_shape_coeffs", pca.GetCoeffs());
         eyeRegionNode.Add("primary_skin_texture", faceMaterial.GetTexture("_Tex2dColor").name);
+        eyeRegionNode.Add("albedo_resource_root", string.IsNullOrEmpty(activeAlbedoResourceRoot) ? "visible/default" : activeAlbedoResourceRoot);
 
         return eyeRegionNode;
     }

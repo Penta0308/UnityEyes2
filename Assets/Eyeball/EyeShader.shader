@@ -86,9 +86,9 @@ Shader "EyeShader" {
             float2 uv = IN.uv_MainTex;
             uv += float2(-1.0, 1.0)*offsetL2 * float2(24,24);
             
-            // Unified piecewise radial remap — no flat pupilColor.
-            // Darkness in the pupil area comes from the texture itself, so
-            // the cornea dome gets a textured pupil with no hard black circle.
+            // Unified piecewise radial remap. The iris texture is remapped
+            // around a physically dark pupil aperture; corneal and wetness
+            // highlights remain separate surface layers above that aperture.
             //
             //   r0 ∈ [0,       r_app    ] → texture pupil  [0, R_PUPIL_UV]
             //   r0 ∈ [r_app,   R_IRIS_UV] → texture iris   [R_PUPIL_UV, R_IRIS_UV]
@@ -96,7 +96,11 @@ Shader "EyeShader" {
             const float R_PUPIL_UV = 0.0788;
             const float R_IRIS_UV  = 0.1385;
 
-            float2 d0 = IN.uv_MainTex - float2(0.5, 0.5);
+            // Use the once-refracted UV for both the anatomical partition and
+            // texture lookup. Previously r0 used the unrefracted UV while the
+            // atlas received the offset a second time; that displaced the dark
+            // texture pupil relative to the iris aperture.
+            float2 d0 = uv - float2(0.5, 0.5);
             float r0 = length(d0);
             float2 dir0 = (r0 > 1e-5) ? (d0 / r0) : float2(1.0, 0.0);
 
@@ -119,9 +123,16 @@ Shader "EyeShader" {
             }
 
             float2 uv_iris = float2(0.5, 0.5) + dir0 * r_sample;
-            uv_iris += float2(-1.0, 1.0) * offsetL2 * float2(24.0, 24.0);
-
             float4 eyeColor = tex2D(_MainTex, uv_iris);
+
+            // The pupil is an aperture, not a diffusely reflecting iris patch.
+            // Define it from the same refracted radial coordinate used above so
+            // its edge cannot drift away from the deformed iris opening. The
+            // cornea/wetness layers still produce physically separate glints.
+            float apertureAA = max(fwidth(r0), 1e-5);
+            float pupilAperture = 1.0 - smoothstep(
+                r_app - apertureAA, r_app + apertureAA, r0);
+            eyeColor.rgb = lerp(eyeColor.rgb, float3(0.0, 0.0, 0.0), pupilAperture);
             
             // Tissue classification comes from the established UV anatomy, not
             // texture brightness. The existing atlas transitions from iris at
@@ -154,10 +165,16 @@ Shader "EyeShader" {
             // Apply fresnel effect to smoothness
             o.Smoothness = lerp(baseSmooth, irisGloss, fresnel);
             
-            // Add a "wet film" effect to the entire eye
-            // This slightly enhances reflectivity everywhere, simulating tear film
-            float tearFilm = 0.65;  // Strength of the wet film effect
+            // Add a "wet film" effect to the entire eye.
+            // Preserve the original known-working highlight width; forcing
+            // smoothness to 0.98 made the point-light glints subpixel and they
+            // disappeared at the rendered sampling resolution.
+            float tearFilm = 0.65;
             o.Smoothness = max(o.Smoothness, baseSmooth + tearFilm);
+            // The 0805 source footprint is now represented geometrically by
+            // four light samples, so use a compact but still raster-resolvable
+            // pupil highlight rather than the former very broad lobe.
+            o.Smoothness = lerp(o.Smoothness, 0.90, pupilAperture);
             
             o.Alpha = 0.5f;
         }

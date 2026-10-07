@@ -1,6 +1,7 @@
 {
   "outputPath": "C:/Users/penta/Documents/SNU20262/Grad/UnityEyes2/gradpupil/out_unityeyes/imgs",
-  "num_samples": 20,
+  "num_samples": 2000,
+  "albedo_resource_root": "NIRAlbedo",
   "dataset": {
     "poses_per_identity": 4,
     "pupil_diameters_mm": [2.0, 3.5, 5.0, 6.5, 8.0],

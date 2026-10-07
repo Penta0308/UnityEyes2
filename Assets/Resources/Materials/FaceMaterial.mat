@@ -326,7 +326,7 @@ Material:
     - _DstBlend: 0
     - _Fresnel: 5
     - _Glossiness: 0.5
-    - _LookDownNess: 0.0012860493
+    - _LookDownNess: 0
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
