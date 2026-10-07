@@ -1,0 +1,264 @@
+{
+  "outputPath": "C:/Users/penta/Documents/SNU20262/Grad/UnityEyes2/gradpupil/out_unityeyes/imgs",
+  "num_samples": 20,
+  "dataset": {
+    "poses_per_identity": 4,
+    "pupil_diameters_mm": [2.0, 3.5, 5.0, 6.5, 8.0],
+    "seed": 1729
+  },
+  "motion_center": 0,
+  "cameras": [
+    {
+      "name": "ov9281",
+      "noise_distribution": "uniform",
+      "intrinsics": {
+        "fx": 2320.0,
+        "fy": 2320.0,
+        "cx": 1280.0,
+        "cy": 800.0,
+        "w": 2560,
+        "h": 1600
+      },
+      "intrinsics_noise": {
+        "fx": 20.0,
+        "fy": 20.0,
+        "cx": 8.0,
+        "cy": 8.0,
+        "w": 0,
+        "h": 0
+      },
+      "extrinsics": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.08,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0
+      },
+      "extrinsics_noise": {
+        "x": 0.003,
+        "y": 0.003,
+        "z": 0.015,
+        "rx": 4.0,
+        "ry": 4.0,
+        "rz": 5.0
+      }
+    }
+  ],
+  "lights": [
+    {
+      "name": "ir780_00",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_01",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_02",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_03",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_04",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_05",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_06",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    },
+    {
+      "name": "ir780_07",
+      "type": "point",
+      "array_mounted": 0,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0.08
+      },
+      "position_noise": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "properties": {
+        "range": 25.0,
+        "intensity": 0.8,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "shadows": "None"
+      }
+    }
+  ],
+  "eye_parameters": {
+    "pupil_diameter_mm_range": {
+      "min": 2.8,
+      "max": 7.2
+    },
+    "iris_diameter_mm_range": {
+      "min": 10.5,
+      "max": 12.5
+    },
+    "default_yaw": 0.0,
+    "default_pitch": 0.0,
+    "yaw_noise": 12.0,
+    "pitch_noise": 10.0
+  }
+}
