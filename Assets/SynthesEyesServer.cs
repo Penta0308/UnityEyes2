@@ -1543,12 +1543,22 @@ public class SynthesEyesServer : MonoBehaviour{
             cameraNode.Add("head_pose", cam.transform.rotation.eulerAngles.ToString("F4"));
             cameraNode.Add("camera_pose", eyeball.GetCameratoEyeCenterPose());
 
+            int imageWidth = cameraOriginalIntrinsics[i].width;
+            int imageHeight = cameraOriginalIntrinsics[i].height;
+            JSONNode labelImageSize = new JSONClass();
+            labelImageSize.Add("width", new JSONData(imageWidth));
+            labelImageSize.Add("height", new JSONData(imageHeight));
+            cameraNode.Add("label_image_size", labelImageSize);
+
             JSONArray listInteriorMargin2D = new JSONArray();
             cameraNode.Add("interior_margin_2d", listInteriorMargin2D);
             foreach (var idx in EyeRegionTopology.interior_margin_idxs)
             {
                 Vector3 v_3d = eyeRegion.transform.localToWorldMatrix * meshEyeRegion.vertices[idx];
-                listInteriorMargin2D.Add(new JSONData(cam.WorldToScreenPoint(v_3d).ToString("F4")));
+                Vector3 p = cam.WorldToViewportPoint(v_3d);
+                p.x *= imageWidth;
+                p.y *= imageHeight;
+                listInteriorMargin2D.Add(new JSONData(p.ToString("F4")));
             }
 
             JSONArray listCaruncle2D = new JSONArray();
@@ -1556,7 +1566,10 @@ public class SynthesEyesServer : MonoBehaviour{
             foreach (var idx in EyeRegionTopology.caruncle_idxs)
             {
                 Vector3 v_3d = eyeRegion.transform.localToWorldMatrix * meshEyeRegion.vertices[idx];
-                listCaruncle2D.Add(new JSONData(cam.WorldToScreenPoint(v_3d).ToString("F4")));
+                Vector3 p = cam.WorldToViewportPoint(v_3d);
+                p.x *= imageWidth;
+                p.y *= imageHeight;
+                listCaruncle2D.Add(new JSONData(p.ToString("F4")));
             }
 
             JSONArray listIris2D = new JSONArray();
@@ -1564,7 +1577,10 @@ public class SynthesEyesServer : MonoBehaviour{
             foreach (var idx in EyeRegionTopology.iris_idxs)
             {
                 Vector3 v_3d = eyeball.transform.localToWorldMatrix * meshEyeBall.vertices[idx];
-                listIris2D.Add(new JSONData(cam.WorldToScreenPoint(v_3d).ToString("F4")));
+                Vector3 p = cam.WorldToViewportPoint(v_3d);
+                p.x *= imageWidth;
+                p.y *= imageHeight;
+                listIris2D.Add(new JSONData(p.ToString("F4")));
             }
 
             cameraNode.Add("ground_truth", eyeball.GetGazeVector(cam));
