@@ -219,11 +219,13 @@ public class EyeballController : MonoBehaviour {
         return gazeNode;
     }
 
-    public JSONNode GetCameratoEyeCenterPose() {
+    public JSONNode GetCameratoEyeCenterPose(Camera camera = null) {
         JSONNode cameraNode = new JSONClass();
+        Camera selected = camera != null ? camera : Camera.main;
+        if (selected == null) return cameraNode;
 
-        cameraNode.Add("position", Camera.main.transform.position.ToString("F4"));
-        cameraNode.Add("rotation", Camera.main.transform.rotation.eulerAngles.ToString("F4"));
+        cameraNode.Add("position", selected.transform.position.ToString("F4"));
+        cameraNode.Add("rotation", selected.transform.rotation.eulerAngles.ToString("F4"));
 
         return cameraNode;
     }

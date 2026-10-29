@@ -16,6 +16,8 @@ public class GroupedRandomizationController : MonoBehaviour
     private int posesPerIdentity = 1;
     private float[] pupilDiametersMm = { 4.0f };
     private int baseSeed = 1729;
+    private int initialIdentityIndex;
+    private int identityStride = 1;
 
     private int identityIndex;
     private int poseIndex;
@@ -28,6 +30,9 @@ public class GroupedRandomizationController : MonoBehaviour
     public int PoseIndex => poseIndex;
     public int PupilIndex => pupilIndex;
     public float PupilDiameterMm => pupilDiametersMm[pupilIndex];
+    public int SamplesPerIdentity => posesPerIdentity * pupilDiametersMm.Length;
+    public int GlobalSampleIndex =>
+        ((identityIndex * posesPerIdentity + poseIndex) * pupilDiametersMm.Length) + pupilIndex;
 
     public void Configure(
         SynthesEyesServer owner,
@@ -35,7 +40,9 @@ public class GroupedRandomizationController : MonoBehaviour
         EyeballController ball,
         int poseCount,
         float[] pupilSizesMm,
-        int seed)
+        int seed,
+        int startIdentity = 0,
+        int identityStep = 1)
     {
         server = owner;
         eyeRegion = region;
@@ -45,6 +52,8 @@ public class GroupedRandomizationController : MonoBehaviour
             ? pupilSizesMm
             : new[] { 4.0f };
         baseSeed = seed;
+        initialIdentityIndex = Mathf.Max(0, startIdentity);
+        identityStride = Mathf.Max(1, identityStep);
 
         // Appearance is now changed explicitly at identity boundaries rather
         // than implicitly on every EyeRegionController.UpdateEyeRegion call.
@@ -54,7 +63,7 @@ public class GroupedRandomizationController : MonoBehaviour
 
     public void ResetSequence()
     {
-        identityIndex = 0;
+        identityIndex = initialIdentityIndex;
         poseIndex = 0;
         pupilIndex = 0;
         identityPrepared = false;
@@ -99,7 +108,7 @@ public class GroupedRandomizationController : MonoBehaviour
         if (poseIndex < posesPerIdentity) return;
 
         poseIndex = 0;
-        identityIndex++;
+        identityIndex += identityStride;
         identityPrepared = false;
     }
 
@@ -111,6 +120,9 @@ public class GroupedRandomizationController : MonoBehaviour
         node.Add("pupil_index", new JSONData(pupilIndex));
         node.Add("pupil_diameter_mm", new JSONData(PupilDiameterMm));
         node.Add("seed", new JSONData(baseSeed + identityIndex));
+        node.Add("shard_index", new JSONData(initialIdentityIndex));
+        node.Add("shard_count", new JSONData(identityStride));
+        node.Add("global_sample_index", new JSONData(GlobalSampleIndex));
         return node;
     }
 }

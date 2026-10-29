@@ -85,8 +85,19 @@ public class SynthesEyesServer : MonoBehaviour{
     private string outputPath;
     public string outputFolderName = "imgs";
 
+    // num_samples is the global dataset size. Each shard derives its own local
+    // save count while retaining globally unique identity and sample indices.
+    private int totalSamplesToGenerate = 10000;
     private int maxSamplesToSave = 10000;
     private GroupedRandomizationController datasetRandomizer;
+
+    private string commandLineConfigPath;
+    private string commandLineOutputPath;
+    private int commandLineSampleCount = -1;
+    private int commandLineSeed = -1;
+    private int shardIndex = 0;
+    private int shardCount = 1;
+    private bool quitOnComplete = false;
 
     // Motion Center Feature
     private bool useMotionCenter = true;
@@ -94,6 +105,30 @@ public class SynthesEyesServer : MonoBehaviour{
     private Vector3 cameraArrayRotation = Vector3.zero;
     private Vector3 cameraArrayPositionNoise = Vector3.zero;
     private Vector3 cameraArrayRotationNoise = Vector3.zero;
+
+    private struct CameraDistanceBand
+    {
+        public float minCm;
+        public float maxCm;
+        public float weight;
+    }
+    private readonly List<CameraDistanceBand> cameraDistanceBands = new List<CameraDistanceBand>();
+    private float cameraDistanceTotalWeight = 0f;
+
+    private struct CameraAngleBand
+    {
+        public float minDeg;
+        public float maxDeg;
+        public float weight;
+    }
+    private readonly List<CameraAngleBand> cameraAngleBands = new List<CameraAngleBand>();
+    private float cameraAngleTotalWeight = 0f;
+    private Vector2 cameraRollRangeDeg = new Vector2(-180f, 180f);
+
+    private GameObject randomizedBackdrop;
+    private Texture2D randomizedBackdropTexture;
+    private Material randomizedBackdropMaterial;
+
     private GameObject cameraParent;
     private List<Vector3> cameraOriginalPositions = new List<Vector3>();
     private List<Vector3> cameraOriginalRotations = new List<Vector3>();
@@ -137,6 +172,12 @@ public class SynthesEyesServer : MonoBehaviour{
      */
     void Start()
     {
+        if (!ParseCommandLine())
+        {
+            enabled = false;
+            return;
+        }
+
         eyeRegion = eyeRegionObj.GetComponent<EyeRegionController>();
         eyeball = eyeballObj.GetComponent<EyeballController>();
         eyeRegionSubdiv = eyeRegionSubdivObj.GetComponent<SubdivMesh>();
@@ -157,11 +198,14 @@ public class SynthesEyesServer : MonoBehaviour{
         // Load cameras from JSON after one frame so UI and EyeballController
         // initialization have finished. Resolve relative paths from the Unity
         // project root, not the process working directory.
-        string resolvedConfigPath = ResolveProjectPath(jsonConfigPath);
+        string requestedConfigPath = string.IsNullOrEmpty(commandLineConfigPath)
+            ? jsonConfigPath
+            : commandLineConfigPath;
+        string resolvedConfigPath = ResolveProjectPath(requestedConfigPath);
         if (!File.Exists(resolvedConfigPath))
         {
             string fallbackConfigPath = ResolveProjectPath("gradpupil/gradpupil_autoload.json");
-            Debug.LogWarning($"Config not found: {jsonConfigPath} resolved to {resolvedConfigPath}; trying {fallbackConfigPath}");
+            Debug.LogWarning($"Config not found: {requestedConfigPath} resolved to {resolvedConfigPath}; trying {fallbackConfigPath}");
             resolvedConfigPath = fallbackConfigPath;
         }
 
@@ -174,6 +218,84 @@ public class SynthesEyesServer : MonoBehaviour{
             Debug.LogWarning($"Config not found: {resolvedConfigPath}");
             StartCoroutine(InitializeDefaultScene());
         }
+    }
+
+    private bool ParseCommandLine()
+    {
+        string[] args = System.Environment.GetCommandLineArgs();
+        for (int i = 1; i < args.Length; i++)
+        {
+            string arg = args[i];
+            if (arg == "--quit-on-complete")
+            {
+                quitOnComplete = true;
+                continue;
+            }
+            if (arg == "--help-gradpupil")
+            {
+                Debug.Log("GradPupil options: --config PATH --output PATH --samples N " +
+                          "--seed N --shard-index N --shard-count N --quit-on-complete");
+                Application.Quit(0);
+                return false;
+            }
+            if (!arg.StartsWith("--")) continue; // Leave Unity's own arguments alone.
+            if (i + 1 >= args.Length)
+            {
+                Debug.LogError($"Missing value for command-line option {arg}");
+                Application.Quit(2);
+                return false;
+            }
+
+            string value = args[++i];
+            int parsed;
+            switch (arg)
+            {
+                case "--config":
+                    commandLineConfigPath = value;
+                    break;
+                case "--output":
+                    commandLineOutputPath = value;
+                    break;
+                case "--samples":
+                    if (!int.TryParse(value, out parsed) || parsed < 1)
+                        return CommandLineError($"Invalid --samples value: {value}");
+                    commandLineSampleCount = parsed;
+                    break;
+                case "--seed":
+                    if (!int.TryParse(value, out parsed) || parsed < 0)
+                        return CommandLineError($"Invalid --seed value: {value}");
+                    commandLineSeed = parsed;
+                    break;
+                case "--shard-index":
+                    if (!int.TryParse(value, out parsed) || parsed < 0)
+                        return CommandLineError($"Invalid --shard-index value: {value}");
+                    shardIndex = parsed;
+                    break;
+                case "--shard-count":
+                    if (!int.TryParse(value, out parsed) || parsed < 1)
+                        return CommandLineError($"Invalid --shard-count value: {value}");
+                    shardCount = parsed;
+                    break;
+                default:
+                    return CommandLineError($"Unknown GradPupil command-line option: {arg}");
+            }
+        }
+
+        if (shardIndex >= shardCount)
+            return CommandLineError($"--shard-index {shardIndex} must be less than --shard-count {shardCount}");
+
+        Debug.Log($"GradPupil command line: shard {shardIndex}/{shardCount}, " +
+                  $"config='{commandLineConfigPath}', output='{commandLineOutputPath}', " +
+                  $"samples={commandLineSampleCount}, seed={commandLineSeed}, " +
+                  $"quitOnComplete={quitOnComplete}");
+        return true;
+    }
+
+    private bool CommandLineError(string message)
+    {
+        Debug.LogError(message);
+        Application.Quit(2);
+        return false;
     }
 
     private string ResolveProjectPath(string path)
@@ -189,6 +311,7 @@ public class SynthesEyesServer : MonoBehaviour{
 
         activeConfigPath = configPath;
         LoadCamerasFromConfig(configPath);
+        ApplyCommandLineOutputOverride();
 
         if (eyeParameters != null)
         {
@@ -248,7 +371,9 @@ public class SynthesEyesServer : MonoBehaviour{
         int posesPerIdentity = dataset["poses_per_identity"] != null
             ? dataset["poses_per_identity"].AsInt
             : 1;
-        int seed = dataset["seed"] != null ? dataset["seed"].AsInt : 1729;
+        int seed = commandLineSeed >= 0
+            ? commandLineSeed
+            : (dataset["seed"] != null ? dataset["seed"].AsInt : 1729);
 
         List<float> pupilSizes = new List<float>();
         JSONArray pupilArray = dataset["pupil_diameters_mm"].AsArray;
@@ -269,9 +394,44 @@ public class SynthesEyesServer : MonoBehaviour{
             eyeball,
             posesPerIdentity,
             pupilSizes.ToArray(),
-            seed);
+            seed,
+            shardIndex,
+            shardCount);
 
-        Debug.Log($"Grouped dataset: {posesPerIdentity} poses x {pupilSizes.Count} pupil sizes per identity.");
+        int samplesPerIdentity = datasetRandomizer.SamplesPerIdentity;
+        maxSamplesToSave = CountSamplesForShard(
+            totalSamplesToGenerate, samplesPerIdentity, shardIndex, shardCount);
+        Debug.Log($"Grouped dataset: {posesPerIdentity} poses x {pupilSizes.Count} pupil sizes per identity; " +
+                  $"global samples={totalSamplesToGenerate}, shard {shardIndex}/{shardCount} " +
+                  $"will save {maxSamplesToSave} samples.");
+    }
+
+    private static int CountSamplesForShard(
+        int totalSamples, int samplesPerIdentity, int index, int count)
+    {
+        if (samplesPerIdentity <= 0) return 0;
+        int assigned = 0;
+        int totalIdentities = (totalSamples + samplesPerIdentity - 1) / samplesPerIdentity;
+        for (int identity = index; identity < totalIdentities; identity += count)
+        {
+            int firstSample = identity * samplesPerIdentity;
+            assigned += Mathf.Min(samplesPerIdentity, totalSamples - firstSample);
+        }
+        return assigned;
+    }
+
+    private void ApplyCommandLineOutputOverride()
+    {
+        string selected = string.IsNullOrEmpty(commandLineOutputPath)
+            ? outputPath
+            : ResolveProjectPath(commandLineOutputPath);
+        if (string.IsNullOrEmpty(selected))
+            selected = Path.Combine(Application.persistentDataPath, "imgs");
+        if (shardCount > 1)
+            selected = Path.Combine(selected, $"shard_{shardIndex:D2}");
+        outputPath = selected;
+        EnsureDirectoryExists(outputPath);
+        Debug.Log($"Effective output path: {outputPath}");
     }
 
     private void ApplyNirLightingMode()
@@ -391,16 +551,85 @@ public class SynthesEyesServer : MonoBehaviour{
             }
 
             if (rootNode["num_samples"] != null)
-            {
-                maxSamplesToSave = rootNode["num_samples"].AsInt;
-                Debug.Log($"Will save a maximum of {maxSamplesToSave} images");
-            }
+                totalSamplesToGenerate = rootNode["num_samples"].AsInt;
+            if (commandLineSampleCount > 0)
+                totalSamplesToGenerate = commandLineSampleCount;
+            maxSamplesToSave = totalSamplesToGenerate;
+            Debug.Log($"Global dataset target is {totalSamplesToGenerate} images");
 
             if (rootNode["motion_center"] != null)
             {
                 useMotionCenter = rootNode["motion_center"].AsInt == 1;
                 Debug.Log($"Motion center mode: {useMotionCenter}");
             }
+
+            cameraDistanceBands.Clear();
+            cameraDistanceTotalWeight = 0f;
+            if (rootNode["camera_distance_bands_m"] != null)
+            {
+                JSONArray bands = rootNode["camera_distance_bands_m"].AsArray;
+                if (bands != null)
+                {
+                    for (int i = 0; i < bands.Count; i++)
+                    {
+                        float minCm = bands[i]["min"].AsFloat * 100f;
+                        float maxCm = bands[i]["max"].AsFloat * 100f;
+                        float weight = bands[i]["weight"].AsFloat;
+                        if (minCm <= 0f || maxCm <= minCm || weight <= 0f)
+                        {
+                            Debug.LogWarning($"Ignoring invalid camera distance band {i}: " +
+                                             $"min={minCm:F2} cm max={maxCm:F2} cm weight={weight:F3}");
+                            continue;
+                        }
+                        cameraDistanceBands.Add(new CameraDistanceBand
+                        {
+                            minCm = minCm,
+                            maxCm = maxCm,
+                            weight = weight,
+                        });
+                        cameraDistanceTotalWeight += weight;
+                    }
+                }
+                Debug.Log($"Loaded {cameraDistanceBands.Count} camera distance bands " +
+                          $"with total weight {cameraDistanceTotalWeight:F3}");
+            }
+
+            cameraAngleBands.Clear();
+            cameraAngleTotalWeight = 0f;
+            if (rootNode["camera_angle_bands_deg"] != null)
+            {
+                JSONArray bands = rootNode["camera_angle_bands_deg"].AsArray;
+                if (bands != null)
+                {
+                    for (int i = 0; i < bands.Count; i++)
+                    {
+                        float minDeg = Mathf.Max(0f, bands[i]["min"].AsFloat);
+                        float maxDeg = bands[i]["max"].AsFloat;
+                        float weight = bands[i]["weight"].AsFloat;
+                        if (maxDeg <= minDeg || maxDeg > 89f || weight <= 0f)
+                        {
+                            Debug.LogWarning($"Ignoring invalid camera angle band {i}: " +
+                                             $"min={minDeg:F1} max={maxDeg:F1} weight={weight:F3}");
+                            continue;
+                        }
+                        cameraAngleBands.Add(new CameraAngleBand
+                        {
+                            minDeg = minDeg,
+                            maxDeg = maxDeg,
+                            weight = weight,
+                        });
+                        cameraAngleTotalWeight += weight;
+                    }
+                }
+            }
+            if (rootNode["camera_roll_range_deg"] != null)
+            {
+                cameraRollRangeDeg = new Vector2(
+                    rootNode["camera_roll_range_deg"]["min"].AsFloat,
+                    rootNode["camera_roll_range_deg"]["max"].AsFloat);
+            }
+            Debug.Log($"Loaded {cameraAngleBands.Count} camera angle bands; " +
+                      $"roll [{cameraRollRangeDeg.x:F1}, {cameraRollRangeDeg.y:F1}] deg");
 
             if (rootNode["camera_array_center"] != null)
             {
@@ -754,73 +983,47 @@ public class SynthesEyesServer : MonoBehaviour{
 
         Camera cam = cameraList[0];
 
-        // GradPupil prototype IR glint rig: 4 inner + 4 outer emitters, rigidly
-        // mounted to the camera. Units here are Unity world centimeters because
-        // UnityEyes2 converts JSON meters to cm internally.
-        float innerR = 1.35f; // 13.5 mm
-        float outerR = 2.70f; // 27.0 mm
+        // Production IR PCB pattern, rigidly mounted to the camera. KiCad uses
+        // a downward-positive board Y; camera-local Unity Y is upward-positive.
+        // Units are Unity centimeters. D1-D4 form the inner square and D5-D6
+        // are the two asymmetric outer emitters.
         Vector3[] localOffsets = new Vector3[]
         {
-            new Vector3( innerR, 0f, 0f),
-            new Vector3( 0f, innerR, 0f),
-            new Vector3(-innerR, 0f, 0f),
-            new Vector3( 0f,-innerR, 0f),
-            new Vector3( outerR * 0.70710678f,  outerR * 0.70710678f, 0f),
-            new Vector3(-outerR * 0.70710678f,  outerR * 0.70710678f, 0f),
-            new Vector3(-outerR * 0.70710678f, -outerR * 0.70710678f, 0f),
-            new Vector3( outerR * 0.70710678f, -outerR * 0.70710678f, 0f),
+            new Vector3(-0.64f,  0.64f, 0f), // D1: PCB (43.6, 43.6) mm
+            new Vector3( 0.64f,  0.64f, 0f), // D2: PCB (56.4, 43.6) mm
+            new Vector3( 0.64f, -0.64f, 0f), // D3: PCB (56.4, 56.4) mm
+            new Vector3(-0.64f, -0.64f, 0f), // D4: PCB (43.6, 56.4) mm
+            new Vector3(-1.60f, -0.60f, 0f), // D5: PCB (34.0, 56.0) mm
+            new Vector3( 1.60f,  0.60f, 0f), // D6: PCB (66.0, 44.0) mm
         };
-
         int n = Mathf.Min(pointLightList.Count, localOffsets.Length);
 
-        // Approximate each 0805 emitter (2.0 x 1.25 mm package) by four equal
-        // point samples over its camera-plane area. At 80 mm and Rc=7.8 mm,
-        // the corneal virtual image is about 0.093 x 0.058 mm, or 2.7 x 1.7
-        // pixels in the 2560 x 1600 master. A single mathematical point source
-        // can become subpixel and disappear at high smoothness.
-        Vector2[] emitterSamplesCm = new Vector2[]
-        {
-            new Vector2(-0.10f, -0.0625f),
-            new Vector2( 0.10f, -0.0625f),
-            new Vector2(-0.10f,  0.0625f),
-            new Vector2( 0.10f,  0.0625f),
-        };
-
-        // Remove proxies from a previous configuration reload.
+        // Remove superseded multi-point emitter proxies from an earlier model.
         List<GameObject> oldProxies = new List<GameObject>();
         foreach (Transform child in cam.transform)
-            if (child.name.StartsWith("GradPupil0805_")) oldProxies.Add(child.gameObject);
+            if (child.name.StartsWith("GradPupil0805_") || child.name.StartsWith("GradPupil1206_"))
+                oldProxies.Add(child.gameObject);
         foreach (GameObject oldProxy in oldProxies) Destroy(oldProxy);
 
-        int proxyCount = n * emitterSamplesCm.Length;
-        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, proxyCount);
-
+        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, n);
         for (int i = 0; i < n; i++)
         {
             Light source = pointLightList[i];
             if (source == null) continue;
-            source.enabled = false;
             pointLightArrayMounted[i] = true;
-
-            for (int sampleIndex = 0; sampleIndex < emitterSamplesCm.Length; sampleIndex++)
-            {
-                Vector2 sample = emitterSamplesCm[sampleIndex];
-                GameObject proxyObject = new GameObject($"GradPupil0805_{i:00}_{sampleIndex:00}");
-                proxyObject.transform.SetParent(cam.transform, false);
-                proxyObject.transform.localPosition = localOffsets[i] + new Vector3(sample.x, sample.y, 0f);
-                proxyObject.transform.localRotation = Quaternion.identity;
-
-                Light proxy = proxyObject.AddComponent<Light>();
-                proxy.type = LightType.Point;
-                proxy.range = 25f;
-                proxy.intensity = 0.8f / emitterSamplesCm.Length;
-                proxy.color = Color.white;
-                proxy.shadows = LightShadows.None;
-                proxy.renderMode = LightRenderMode.ForcePixel;
-            }
+            source.transform.SetParent(cam.transform, false);
+            source.transform.localPosition = localOffsets[i];
+            source.transform.localRotation = Quaternion.identity;
+            source.enabled = true;
+            source.type = LightType.Point;
+            source.range = 25f;
+            source.intensity = 0.8f;
+            source.color = Color.white;
+            source.shadows = LightShadows.None;
+            source.renderMode = LightRenderMode.ForcePixel;
         }
 
-        Debug.Log($"Applied GradPupil 4+4 IR rig as {proxyCount} point samples for {n} 0805 emitters.");
+        Debug.Log($"Applied exactly {n} GradPupil IR point emitters from the 6-emitter flex PCB.");
     }
 
     private void LoadPointLightsFromConfig(JSONNode rootNode)
@@ -1035,6 +1238,119 @@ public class SynthesEyesServer : MonoBehaviour{
         return Mathf.Clamp(offset, -range, range);
     }
 
+    private float SampleCameraDistanceCm()
+    {
+        if (cameraDistanceBands.Count == 0 || cameraDistanceTotalWeight <= 0f)
+            return cameraArrayCenter.z + GetRandomOffset(cameraArrayPositionNoise.z);
+
+        float draw = Random.value * cameraDistanceTotalWeight;
+        float cumulative = 0f;
+        for (int i = 0; i < cameraDistanceBands.Count; i++)
+        {
+            CameraDistanceBand band = cameraDistanceBands[i];
+            cumulative += band.weight;
+            if (draw <= cumulative || i == cameraDistanceBands.Count - 1)
+                return Random.Range(band.minCm, band.maxCm);
+        }
+        return cameraArrayCenter.z;
+    }
+
+    private Vector3 SampleCameraRotationOffsetDeg()
+    {
+        if (cameraAngleBands.Count == 0 || cameraAngleTotalWeight <= 0f)
+            return new Vector3(
+                GetRandomOffset(cameraArrayRotationNoise.x),
+                GetRandomOffset(cameraArrayRotationNoise.y),
+                Random.Range(cameraRollRangeDeg.x, cameraRollRangeDeg.y));
+
+        float draw = Random.value * cameraAngleTotalWeight;
+        float cumulative = 0f;
+        CameraAngleBand selected = cameraAngleBands[cameraAngleBands.Count - 1];
+        for (int i = 0; i < cameraAngleBands.Count; i++)
+        {
+            cumulative += cameraAngleBands[i].weight;
+            if (draw <= cumulative)
+            {
+                selected = cameraAngleBands[i];
+                break;
+            }
+        }
+        float magnitude = Random.Range(selected.minDeg, selected.maxDeg);
+        float direction = Random.Range(0f, 2f * Mathf.PI);
+        return new Vector3(
+            magnitude * Mathf.Sin(direction),
+            magnitude * Mathf.Cos(direction),
+            Random.Range(cameraRollRangeDeg.x, cameraRollRangeDeg.y));
+    }
+
+    private void EnsureRandomizedBackdrop()
+    {
+        if (randomizedBackdrop != null) return;
+        randomizedBackdrop = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        randomizedBackdrop.name = "GradPupilRandomizedBackdrop";
+        Collider backdropCollider = randomizedBackdrop.GetComponent<Collider>();
+        if (backdropCollider != null) Destroy(backdropCollider);
+        randomizedBackdropTexture = new Texture2D(32, 32, TextureFormat.RGB24, false);
+        randomizedBackdropTexture.wrapMode = TextureWrapMode.Repeat;
+        randomizedBackdropTexture.filterMode = FilterMode.Bilinear;
+        // Load through Resources so player shader stripping cannot remove the
+        // procedural backdrop shader from standalone builds.
+        Shader shader = Resources.Load<Shader>("GradPupilBackdrop");
+        if (shader == null)
+        {
+            Debug.LogError("GradPupilBackdrop shader is missing from Assets/Resources; " +
+                           "disabling procedural backdrop instead of crashing.");
+            randomizedBackdrop.SetActive(false);
+            return;
+        }
+        randomizedBackdropMaterial = new Material(shader);
+        randomizedBackdropMaterial.mainTexture = randomizedBackdropTexture;
+        randomizedBackdrop.GetComponent<Renderer>().material = randomizedBackdropMaterial;
+        randomizedBackdrop.transform.position = new Vector3(0f, 0f, -30f);
+        randomizedBackdrop.transform.localScale = new Vector3(200f, 200f, 1f);
+    }
+
+    private void RandomizeBackdrop()
+    {
+        EnsureRandomizedBackdrop();
+        if (randomizedBackdropMaterial == null || randomizedBackdropTexture == null) return;
+        int width = randomizedBackdropTexture.width;
+        int height = randomizedBackdropTexture.height;
+        Color[] pixels = new Color[width * height];
+        float baseLevel = Random.Range(0.03f, 0.75f);
+        float gradientX = Random.Range(-0.45f, 0.45f);
+        float gradientY = Random.Range(-0.45f, 0.45f);
+        float waveAmplitude = Random.Range(0f, 0.30f);
+        float waveX = Random.Range(0.5f, 4f);
+        float waveY = Random.Range(0.5f, 4f);
+        float phase = Random.Range(0f, 2f * Mathf.PI);
+        for (int y = 0; y < height; y++)
+        {
+            float yn = (y + 0.5f) / height - 0.5f;
+            for (int x = 0; x < width; x++)
+            {
+                float xn = (x + 0.5f) / width - 0.5f;
+                float wave = Mathf.Sin((xn * waveX + yn * waveY) * 2f * Mathf.PI + phase);
+                float noise = Random.Range(-0.10f, 0.10f);
+                float value = Mathf.Clamp01(baseLevel + gradientX * xn + gradientY * yn +
+                                             waveAmplitude * wave + noise);
+                pixels[y * width + x] = new Color(value, value, value, 1f);
+            }
+        }
+        randomizedBackdropTexture.SetPixels(pixels);
+        randomizedBackdropTexture.Apply(false, false);
+        randomizedBackdrop.transform.position = new Vector3(
+            Random.Range(-20f, 20f), Random.Range(-20f, 20f), Random.Range(-50f, -20f));
+        randomizedBackdrop.transform.eulerAngles = new Vector3(0f, 0f, Random.Range(-180f, 180f));
+        randomizedBackdrop.transform.localScale = new Vector3(200f, 200f, 1f);
+        float clearLevel = Random.Range(0f, 0.8f);
+        for (int i = 0; i < cameraList.Count; i++)
+        {
+            cameraList[i].clearFlags = CameraClearFlags.SolidColor;
+            cameraList[i].backgroundColor = new Color(clearLevel, clearLevel, clearLevel, 1f);
+        }
+    }
+
     public void RandomizePose()
     {
         if (eyeball == null)
@@ -1067,14 +1383,15 @@ public class SynthesEyesServer : MonoBehaviour{
         {
             float offsetX = GetRandomOffset(cameraArrayPositionNoise.x);
             float offsetY = GetRandomOffset(cameraArrayPositionNoise.y);
-            float offsetZ = GetRandomOffset(cameraArrayPositionNoise.z);
-            float offsetPitch = GetRandomOffset(cameraArrayRotationNoise.x);
-            float offsetYaw = GetRandomOffset(cameraArrayRotationNoise.y);
-            float offsetRoll = GetRandomOffset(cameraArrayRotationNoise.z);
+            float distanceZ = SampleCameraDistanceCm();
+            Vector3 rotationOffset = SampleCameraRotationOffsetDeg();
 
-
-            cameraParent.transform.position = cameraArrayCenter + new Vector3(offsetX, offsetY, offsetZ);
-            cameraParent.transform.eulerAngles = cameraArrayRotation + new Vector3(offsetPitch, offsetYaw, offsetRoll);
+            cameraParent.transform.position = new Vector3(
+                cameraArrayCenter.x + offsetX,
+                cameraArrayCenter.y + offsetY,
+                distanceZ);
+            cameraParent.transform.eulerAngles = cameraArrayRotation + rotationOffset;
+            RandomizeBackdrop();
 
             // Apply per-camera noise on top of the array noise (local space within parent).
             for (int i = 0; i < cameraList.Count; i++)
@@ -1338,12 +1655,21 @@ public class SynthesEyesServer : MonoBehaviour{
         {
             Debug.Log($"Maximum number of samples ({maxSamplesToSave}) reached. Stopping data collection.");
             isSavingData = false;
-            GameObject.Find("GUI Canvas").GetComponent<Canvas>().enabled = true;
+            Canvas completedCanvas = GameObject.Find("GUI Canvas")?.GetComponent<Canvas>();
+            if (completedCanvas != null) completedCanvas.enabled = true;
             isSavingFrame = false;
+            if (quitOnComplete)
+            {
+                Debug.Log("Shard complete; quitting because --quit-on-complete was specified.");
+                Application.Quit(0);
+            }
             yield break;
         }
 
         framesSaved++;
+        int outputFrame = datasetRandomizer != null
+            ? datasetRandomizer.GlobalSampleIndex + 1
+            : framesSaved;
         int originalCameraIndex = currentCameraIndex;
 
         if (string.IsNullOrEmpty(outputPath))
@@ -1357,7 +1683,7 @@ public class SynthesEyesServer : MonoBehaviour{
             Camera cam = cameraList[i];
             string cameraName = cam.gameObject.name;
 
-            Debug.Log(cameraName + " frame: " + framesSaved);
+            Debug.Log(cameraName + " local frame: " + framesSaved + " global frame: " + outputFrame);
 
             SwitchCamera(i - currentCameraIndex);
 
@@ -1386,14 +1712,14 @@ public class SynthesEyesServer : MonoBehaviour{
             RenderTexture.active = null;
 
             byte[] imgBytes = tex.EncodeToEXR(Texture2D.EXRFlags.CompressZIP);
-            string fileName = Path.Combine(outputPath, $"{framesSaved}_{cameraName}.exr");
+            string fileName = Path.Combine(outputPath, $"{outputFrame}_{cameraName}.exr");
             File.WriteAllBytes(fileName, imgBytes);
 
             RenderTexture.ReleaseTemporary(renderTexture);
             Object.Destroy(tex);
         }
 
-        saveAllCamerasDetails(framesSaved);
+        saveAllCamerasDetails(outputFrame);
         if (datasetRandomizer != null)
         {
             datasetRandomizer.AdvanceAfterSave();
@@ -1422,6 +1748,7 @@ public class SynthesEyesServer : MonoBehaviour{
         if (File.Exists(path))
         {
             LoadCamerasFromConfig(path);
+            ApplyCommandLineOutputOverride();
 
             if (eyeParameters != null)
             {
@@ -1541,7 +1868,7 @@ public class SynthesEyesServer : MonoBehaviour{
             camerasNode.Add(cameraName, cameraNode);
 
             cameraNode.Add("head_pose", cam.transform.rotation.eulerAngles.ToString("F4"));
-            cameraNode.Add("camera_pose", eyeball.GetCameratoEyeCenterPose());
+            cameraNode.Add("camera_pose", eyeball.GetCameratoEyeCenterPose(cam));
 
             int imageWidth = cameraOriginalIntrinsics[i].width;
             int imageHeight = cameraOriginalIntrinsics[i].height;

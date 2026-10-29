@@ -1,65 +1,71 @@
 {
-  "outputPath": "C:/Users/penta/Documents/SNU20262/Grad/UnityEyes2/gradpupil/out_unityeyes/imgs",
-  "num_samples": 2000,
+  "outputPath": "C:/Users/penta/Documents/SNU20262/Grad/UnityEyes2/gradpupil/out_unityeyes_v3_native46/imgs",
+  "num_samples": 10000,
   "albedo_resource_root": "NIRAlbedo",
   "dataset": {
     "poses_per_identity": 4,
-    "pupil_diameters_mm": [2.0, 3.5, 5.0, 6.5, 8.0],
+    "pupil_diameters_mm": [
+      2.0,
+      3.5,
+      5.0,
+      6.5,
+      8.0
+    ],
     "seed": 1729
   },
-  "motion_center": 0,
+  "motion_center": 1,
   "cameras": [
     {
       "name": "ov9281",
       "noise_distribution": "uniform",
       "intrinsics": {
-        "fx": 2320.0,
-        "fy": 2320.0,
-        "cx": 1280.0,
-        "cy": 800.0,
-        "w": 2560,
-        "h": 1600
+        "fx": 1533.333333,
+        "fy": 1533.333333,
+        "cx": 768.0,
+        "cy": 480.0,
+        "w": 1536,
+        "h": 960
       },
       "intrinsics_noise": {
-        "fx": 20.0,
-        "fy": 20.0,
-        "cx": 8.0,
-        "cy": 8.0,
+        "fx": 15.0,
+        "fy": 15.0,
+        "cx": 4.0,
+        "cy": 4.0,
         "w": 0,
         "h": 0
       },
       "extrinsics": {
         "x": 0.0,
         "y": 0.0,
-        "z": 0.08,
+        "z": 0.0,
         "rx": 0.0,
         "ry": 0.0,
         "rz": 0.0
       },
       "extrinsics_noise": {
-        "x": 0.003,
-        "y": 0.003,
-        "z": 0.015,
-        "rx": 4.0,
-        "ry": 4.0,
-        "rz": 5.0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0
       }
     }
   ],
   "lights": [
     {
-      "name": "ir780_00",
+      "name": "ir780_D1",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": -0.0064,
+        "y": -0.0064,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -73,18 +79,18 @@
       }
     },
     {
-      "name": "ir780_01",
+      "name": "ir780_D2",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": 0.0064,
+        "y": -0.0064,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -98,18 +104,18 @@
       }
     },
     {
-      "name": "ir780_02",
+      "name": "ir780_D3",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": 0.0064,
+        "y": 0.0064,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -123,18 +129,18 @@
       }
     },
     {
-      "name": "ir780_03",
+      "name": "ir780_D4",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": -0.0064,
+        "y": 0.0064,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -148,18 +154,18 @@
       }
     },
     {
-      "name": "ir780_04",
+      "name": "ir780_D5",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": -0.016,
+        "y": 0.006,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -173,68 +179,18 @@
       }
     },
     {
-      "name": "ir780_05",
+      "name": "ir780_D6",
       "type": "point",
-      "array_mounted": 0,
+      "array_mounted": 1,
       "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
+        "x": 0.016,
+        "y": -0.006,
+        "z": 0.0
       },
       "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
-      },
-      "properties": {
-        "range": 25.0,
-        "intensity": 0.8,
-        "color": {
-          "r": 1,
-          "g": 1,
-          "b": 1
-        },
-        "shadows": "None"
-      }
-    },
-    {
-      "name": "ir780_06",
-      "type": "point",
-      "array_mounted": 0,
-      "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
-      },
-      "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
-      },
-      "properties": {
-        "range": 25.0,
-        "intensity": 0.8,
-        "color": {
-          "r": 1,
-          "g": 1,
-          "b": 1
-        },
-        "shadows": "None"
-      }
-    },
-    {
-      "name": "ir780_07",
-      "type": "point",
-      "array_mounted": 0,
-      "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0.08
-      },
-      "position_noise": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
       },
       "properties": {
         "range": 25.0,
@@ -261,5 +217,59 @@
     "default_pitch": 0.0,
     "yaw_noise": 12.0,
     "pitch_noise": 10.0
+  },
+  "camera_array_center": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.08,
+    "rx": 0.0,
+    "ry": 180.0,
+    "rz": 0.0
+  },
+  "camera_array_center_noise": {
+    "x": 0.015,
+    "y": 0.012,
+    "z": 0.0,
+    "rx": 0.0,
+    "ry": 0.0,
+    "rz": 0.0
+  },
+  "camera_distance_bands_m": [
+    {
+      "min": 0.03,
+      "max": 0.055,
+      "weight": 0.2
+    },
+    {
+      "min": 0.055,
+      "max": 0.11,
+      "weight": 0.6
+    },
+    {
+      "min": 0.11,
+      "max": 0.2,
+      "weight": 0.2
+    }
+  ],
+  "camera_angle_bands_deg": [
+    {
+      "min": 0.0,
+      "max": 10.0,
+      "weight": 0.6
+    },
+    {
+      "min": 10.0,
+      "max": 22.0,
+      "weight": 0.25
+    },
+    {
+      "min": 22.0,
+      "max": 35.0,
+      "weight": 0.15
+    }
+  ],
+  "camera_roll_range_deg": {
+    "min": -180.0,
+    "max": 180.0
   }
 }
